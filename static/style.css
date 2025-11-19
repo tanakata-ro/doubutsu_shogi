@@ -1,0 +1,114 @@
+:root {
+    --bg-color: #1a1a1a;
+    --text-color: #e0e0e0;
+    --accent-color: #00d1b2; /* モダンなティール色 */
+    --board-border: #444;
+    --piece-bg: #252525;
+    --piece-hover: #333;
+    --enemy-color: #ff6b6b; /* 敵は赤系 */
+    --self-color: #4ecdc4;  /* 自分は青緑系 */
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: 'Courier New', Courier, monospace; /* 等幅フォントでテック感を出す */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}
+
+.container {
+    text-align: center;
+    width: 320px;
+}
+
+h1 {
+    font-size: 1.5rem;
+    letter-spacing: 3px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid var(--accent-color);
+    display: inline-block;
+    padding-bottom: 5px;
+}
+
+#status {
+    font-size: 0.9rem;
+    color: #888;
+    height: 20px;
+}
+
+/* 盤面グリッド */
+.board {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+    gap: 5px;
+    margin: 20px 0;
+    background-color: var(--board-border);
+    padding: 5px;
+    border-radius: 4px;
+}
+
+.cell {
+    background-color: var(--piece-bg);
+    height: 80px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 2rem;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-radius: 2px;
+    position: relative;
+}
+
+.cell:hover {
+    background-color: var(--piece-hover);
+}
+
+.cell.selected {
+    box-shadow: inset 0 0 0 3px var(--accent-color);
+}
+
+/* 駒の色分け */
+.piece-own { color: var(--self-color); }
+.piece-enemy { color: var(--enemy-color); transform: rotate(180deg); } /* 相手の駒は逆さま */
+
+/* 持ち駒エリア */
+.hand-area {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 10px 0;
+    padding: 10px;
+    border: 1px dashed #444;
+    min-height: 40px;
+}
+
+.label { font-size: 0.8rem; color: #666; }
+
+.hand-pieces {
+    display: flex;
+    gap: 10px;
+}
+
+.hand-piece {
+    cursor: pointer;
+    font-size: 1.2rem;
+    position: relative;
+}
+.hand-piece span {
+    font-size: 0.7rem;
+    position: absolute;
+    bottom: -10px;
+    right: -5px;
+    color: #fff;
+}
+.hand-piece.selected { color: var(--accent-color); font-weight: bold; }
+
+/* 成り駒の表現（文字色を変えるなど） */
+.promoted { text-decoration: underline; }
