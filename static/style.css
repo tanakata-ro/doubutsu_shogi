@@ -112,3 +112,23 @@ h1 {
 
 /* 成り駒の表現（文字色を変えるなど） */
 .promoted { text-decoration: underline; }
+
+.btn {
+    background: transparent;
+    border: 1px solid var(--accent-color);
+    color: var(--accent-color);
+    padding: 10px 20px;
+    margin: 10px;
+    font-family: inherit;
+    cursor: pointer;
+    font-size: 1rem;
+}
+.btn:hover {
+    background: var(--accent-color);
+    color: #000;
+}
+.message {
+    color: #ffcc00;
+    font-size: 0.8rem;
+    height: 1.2em;
+}

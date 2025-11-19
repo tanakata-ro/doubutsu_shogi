@@ -10,20 +10,29 @@
     <div class="container">
         <header>
             <h1>ANIMAL LOGIC</h1>
-            <p id="status">Player Turn</p>
-        </header>
-
-        <div class="hand-area" id="enemy-hand">
-            <span class="label">AI HAND:</span>
-            <div class="hand-pieces" id="hand-2"></div>
-        </div>
-
-        <div class="board" id="board">
+            
+            <div id="setup-area">
+                <p>Choose your turn:</p>
+                <button onclick="startGame(1)" class="btn">先手 (Player 1)</button>
+                <button onclick="startGame(2)" class="btn">後手 (Player 2)</button>
             </div>
 
-        <div class="hand-area" id="my-hand">
-            <span class="label">YOU HAND:</span>
-            <div class="hand-pieces" id="hand-1"></div>
+            <p id="status" style="display:none;">Ready</p>
+            <p id="message" class="message"></p>
+        </header>
+
+        <div id="game-area" style="display:none;">
+            <div class="hand-area" id="enemy-hand">
+                <span class="label">ENEMY:</span>
+                <div class="hand-pieces" id="hand-enemy"></div>
+            </div>
+
+            <div class="board" id="board"></div>
+
+            <div class="hand-area" id="my-hand">
+                <span class="label">YOU:</span>
+                <div class="hand-pieces" id="hand-self"></div>
+            </div>
         </div>
     </div>
 

@@ -1,76 +1,121 @@
-// 盤面状態 (0:空, 正:自分, 負:敵)
-// 初期配置
-let board = [
-    -2, -1, -3,
-     0, -4,  0,
-     0,  4,  0,
-     3,  1,  2
-];
+let board = [];
+let hand = [[0]*6, [0]*6];
+let humanPlayerId = 1; // 1 or 2
+let isPlayerTurn = false;
+let selectedIndex = -1; // -1:None, 0-11:Board, 100+:Hand
 
-// 持ち駒 (idx 0:未使用, 1:L, 2:G, 3:E, 4:C, 5:H)
-// hand[0] = 自分の持ち駒, hand[1] = 敵の持ち駒
-let hand = [
-    [0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0]
-];
-
-// 駒の文字定義 (著作権フリーな文字で表現)
 const PIECE_CHARS = {
-    1: "王", // ライオン (LION)
-    2: "麒", // キリン (GIRAFFE)
-    3: "象", // ゾウ (ELEPHANT)
-    4: "歩", // ヒヨコ (CHICK)
-    5: "金"  // ニワトリ (CHICKEN)
+    1: "王", 2: "麒", 3: "象", 4: "歩", 5: "金"
 };
 
-let selectedIndex = -1; // -1:未選択, 0-11:盤面, 100+:持ち駒
-let isPlayerTurn = true;
+// ゲーム開始処理
+async function startGame(pid) {
+    humanPlayerId = pid;
+    document.getElementById('setup-area').style.display = 'none';
+    document.getElementById('game-area').style.display = 'block';
+    document.getElementById('status').style.display = 'block';
+    document.getElementById('message').innerText = "Initializing...";
 
+    try {
+        const res = await fetch('/start', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ human_player: humanPlayerId })
+        });
+        const data = await res.json();
+        
+        updateGameState(data);
+
+    } catch (e) {
+        console.error(e);
+        alert("Connection Error");
+    }
+}
+
+// サーバーからのレスポンスで全状態を更新
+function updateGameState(data) {
+    board = data.board;
+    hand = data.hand;
+    
+    render();
+
+    if (data.status === 'win') {
+        endGame(true, data.message);
+    } else if (data.status === 'lose') {
+        endGame(false, data.message);
+    } else if (data.status === 'error') {
+        // 手を戻すなどの処理が必要だが、今回はAlertのみ
+        alert(data.message);
+        isPlayerTurn = true; 
+    } else {
+        // ゲーム継続
+        isPlayerTurn = true;
+        document.getElementById('status').innerText = "Your Turn";
+        if (data.message) document.getElementById('message').innerText = data.message;
+    }
+}
+
+function endGame(isWin, msg) {
+    isPlayerTurn = false;
+    document.getElementById('status').innerText = isWin ? "WINNER" : "GAME OVER";
+    document.getElementById('status').style.color = isWin ? "#4ecdc4" : "#ff6b6b";
+    document.getElementById('message').innerText = msg;
+    alert(msg);
+}
+
+// 描画
 function render() {
     const boardEl = document.getElementById('board');
     boardEl.innerHTML = '';
 
-    // 盤面描画
+    // 盤面
     board.forEach((piece, idx) => {
         const cell = document.createElement('div');
         cell.className = 'cell';
-        cell.dataset.index = idx;
         
         if (piece !== 0) {
             const type = Math.abs(piece);
-            cell.innerText = PIECE_CHARS[type] || "?";
-            cell.classList.add(piece > 0 ? 'piece-own' : 'piece-enemy');
-            if (type === 5) cell.classList.add('promoted'); // ニワトリ強調
+            cell.innerText = PIECE_CHARS[type];
+            
+            // 駒の持ち主判定 (値が正ならPlayer1, 負ならPlayer2)
+            const owner = piece > 0 ? 1 : 2;
+            
+            // 自分(humanPlayerId)の駒かどうか
+            if (owner === humanPlayerId) {
+                cell.classList.add('piece-own');
+            } else {
+                cell.classList.add('piece-enemy');
+            }
+            if (type === 5) cell.classList.add('promoted');
         }
         
         if (idx === selectedIndex) cell.classList.add('selected');
-        
-        cell.onclick = () => handleClick(idx);
+        cell.onclick = () => handleBoardClick(idx);
         boardEl.appendChild(cell);
     });
 
-    // 持ち駒描画
-    renderHand(0, 'hand-1'); // 自分
-    renderHand(1, 'hand-2'); // 敵
+    // 持ち駒
+    // hand配列: [0]がPlayer1, [1]がPlayer2
+    // しかし画面下(自分)には humanPlayerId の持ち駒を表示したい
+    const myHandIdx = humanPlayerId - 1;
+    const enemyHandIdx = (humanPlayerId === 1) ? 1 : 0;
+
+    renderHand(myHandIdx, 'hand-self', true);
+    renderHand(enemyHandIdx, 'hand-enemy', false);
 }
 
-function renderHand(playerIdx, elementId) {
+function renderHand(playerIdx, elementId, isSelf) {
     const container = document.getElementById(elementId);
     container.innerHTML = '';
-    
-    // 1(L)は持ち駒にならないので2(G)から
     for(let type=2; type<=5; type++) {
         const count = hand[playerIdx][type];
         if(count > 0) {
             const p = document.createElement('div');
             p.className = 'hand-piece';
             p.innerHTML = PIECE_CHARS[type] + `<span>x${count}</span>`;
-            if (playerIdx === 1) p.classList.add('piece-enemy'); // 敵の持ち駒
-            else p.classList.add('piece-own');
-
-            // 自分の持ち駒だけクリック可能
-            if (playerIdx === 0) {
-                // 持ち駒選択時は 100 + type とする
+            p.classList.add(isSelf ? 'piece-own' : 'piece-enemy');
+            
+            if (isSelf) {
                 if (selectedIndex === 100 + type) p.classList.add('selected');
                 p.onclick = () => handleHandClick(type);
             }
@@ -79,128 +124,75 @@ function renderHand(playerIdx, elementId) {
     }
 }
 
+// クリック処理
 function handleHandClick(type) {
-    if(!isPlayerTurn) return;
-    if (selectedIndex === 100 + type) {
-        selectedIndex = -1; // 解除
-    } else {
-        selectedIndex = 100 + type;
-    }
+    if (!isPlayerTurn) return;
+    selectedIndex = (selectedIndex === 100 + type) ? -1 : 100 + type;
     render();
 }
 
-function handleClick(idx) {
-    if(!isPlayerTurn) return;
+function handleBoardClick(idx) {
+    if (!isPlayerTurn) return;
 
-    const clickedPiece = board[idx];
-    const isMyPiece = clickedPiece > 0;
+    const piece = board[idx];
+    const owner = piece > 0 ? 1 : 2;
+    const isMyPiece = (piece !== 0 && owner === humanPlayerId);
 
-    // 1. 持ち駒を選択中の場合 -> 打つ
+    // 1. 持ち駒を選択中 -> 打つ
     if (selectedIndex >= 100) {
         const type = selectedIndex - 100;
-        if (clickedPiece === 0) {
-            // 空きますなら打てる（詳細なルール判定はサーバーでもやるが、簡易チェック）
-            executeMove(type, idx, true);
+        if (piece === 0) {
+            sendMove(type, idx, 1); // Drop
+        } else {
+            // 打てない場所（駒がある）
+            selectedIndex = -1;
+            render();
         }
-        selectedIndex = -1;
-        render();
         return;
     }
 
-    // 2. 盤面の駒を選択中 -> 移動
+    // 2. 盤上の駒を選択中 -> 移動
     if (selectedIndex !== -1) {
-        // 同じマスをクリック -> 解除
         if (selectedIndex === idx) {
-            selectedIndex = -1;
-        } 
-        // 自分の駒をクリック -> 選択し直し
-        else if (isMyPiece) {
-            selectedIndex = idx;
-        }
-        // 移動実行 (空きます or 敵の駒)
-        else {
-            executeMove(selectedIndex, idx, false);
-            selectedIndex = -1;
+            selectedIndex = -1; // 解除
+        } else if (isMyPiece) {
+            selectedIndex = idx; // 変更
+        } else {
+            // 移動実行 (空きます or 敵)
+            sendMove(selectedIndex, idx, 0); // Move
         }
     } 
-    // 3. 何も選択していない -> 自分の駒なら選択
+    // 3. 未選択 -> 自分の駒を選択
     else if (isMyPiece) {
         selectedIndex = idx;
     }
-
     render();
 }
 
-async function executeMove(from, to, isDrop) {
-    // 暫定的にJS側で盤面更新（アニメーション用）
-    // ※ 本来はサーバーの正規判定を待つべきだが、レスポンス向上のため
-    // 簡易実装: サーバーに今の状態を送って、AIに打たせる
-    
-    // 自分の手をサーバーへ送信する前に、JS上で仮反映させるロジックは複雑なので
-    // ここでは「サーバーに手だけ送る」のではなく
-    // 「自分の手を反映した盤面を作ってAIに投げる」方式にします。
-    // ただし、njit_doubtsuのロジックがサーバーにあるので、
-    // 今回は「自分の手を適用するAPI」を作らず、簡易的にJSで手を反映してしまいます。
-    
-    // === JSでの簡易更新 (本来はここでルールチェックが必要) ===
-    if (isDrop) {
-        board[to] = from; // 自分の駒として配置
-        hand[0][from]--;
-    } else {
-        const piece = board[from];
-        const target = board[to];
-        
-        // 捕獲
-        if (target < 0) {
-            let capType = Math.abs(target);
-            if (capType === 5) capType = 4; // ニワトリはヒヨコに戻る
-            hand[0][capType]++;
-        }
-        
-        // 成り判定 (ヒヨコが最奥へ)
-        if (Math.abs(piece) === 4 && Math.floor(to / 3) === 0) {
-            board[to] = 5; // ニワトリ
-        } else {
-            board[to] = piece;
-        }
-        board[from] = 0;
-    }
-    
+async function sendMove(from, to, isDrop) {
+    selectedIndex = -1;
     isPlayerTurn = false;
     document.getElementById('status').innerText = "Thinking...";
-    render();
+    document.getElementById('message').innerText = "";
+    render(); // 選択解除を反映
 
-    // サーバーへ送信
     try {
-        const response = await fetch('/ai_move', {
+        const res = await fetch('/move', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 board: board,
-                hand: hand
+                hand: hand,
+                human_player: humanPlayerId,
+                move: { from: from, to: to, drop: isDrop }
             })
         });
-        
-        const data = await response.json();
-        
-        if (data.status === 'ok') {
-            // サーバーから返ってきた「AIが打った後の盤面」で更新
-            // ※ data.board はAIの手番完了後の状態
-            board = data.board;
-            hand = data.hand;
-            
-            document.getElementById('status').innerText = `Eval: ${data.score}`;
-        } else {
-            alert(data.message);
-        }
+        const data = await res.json();
+        updateGameState(data);
+
     } catch (e) {
         console.error(e);
-        alert("通信エラー");
+        alert("Communication Error");
+        isPlayerTurn = true;
     }
-    
-    isPlayerTurn = true;
-    render();
 }
-
-// 初期描画
-render();
