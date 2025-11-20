@@ -132,3 +132,43 @@ h1 {
     font-size: 0.8rem;
     height: 1.2em;
 }
+
+/* 盤面全体を180度回転 */
+.board.view-p2 {
+    transform: rotate(180deg);
+}
+
+/* 盤面が回転した時、中のセルを逆回転させて文字を正立させる */
+.board.view-p2 .cell {
+    transform: rotate(180deg);
+}
+
+/* 回転時の駒の向き調整 
+   通常(P1視点): 自分の駒=正立, 敵の駒=逆さま
+   反転(P2視点): 盤全体が回っているので、
+      - 自分の駒(P2)は、本来逆さま配置だが、盤回転+セル回転で正立する
+      - 敵の駒(P1)は、本来正立配置だが、盤回転+セル回転で正立してしまうため、個別に逆さにする必要がある
+*/
+
+/* P2視点のとき、敵(P1)の駒を逆さにする */
+.board.view-p2 .cell .piece-enemy {
+    transform: rotate(180deg);
+    display: inline-block; /* transformを効かせるため */
+}
+
+/* P2視点のとき、自分(P2)の駒は回転させない（盤面回転で既に合っているためリセット） */
+.board.view-p2 .cell .piece-own {
+    transform: rotate(0deg); 
+}
+
+/* 行ける場所のハイライト */
+.cell.suggested {
+    background-color: rgba(0, 209, 178, 0.3); /* アクセントカラーの薄い版 */
+    box-shadow: inset 0 0 10px rgba(0, 209, 178, 0.5);
+    cursor: pointer;
+}
+
+/* 敵の駒が取れる場合のハイライト（少し赤みを混ぜるなどお好みで） */
+.cell.suggested .piece-enemy {
+    text-shadow: 0 0 5px #ff6b6b;
+}
