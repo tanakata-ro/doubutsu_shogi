@@ -1,13 +1,5 @@
 import numpy as np
-import json
-import socket
-import time
 from numba import njit
-
-# --- サーバ定義 ---
-BUFSIZE = 1024
-serverName = "localhost"
-serverPort = 4444
 
 # --- 定数定義 ---
 LION = 1
@@ -22,7 +14,7 @@ PLAYER2 = 2
 WIN_SCORE = 10000
 
 # [dummy, LION, GIRAFFE, ELEPHANT, CHICK, CHICKEN]
-KOMA_VALUE = np.array([0, 1000, 50, 45, 20, 40], dtype=np.int16)
+KOMA_VALUE = np.array([0, 10000, 677, 439, 281, 151], dtype=np.int16)
 
 PIECE_NAME_P1 = ["", "l1", "g1", "e1", "c1", "h1"]
 PIECE_NAME_P2 = ["", "l2", "g2", "e2", "c2", "h2"]
@@ -315,13 +307,13 @@ def undo_make_move_jit(board, hand, move, player, captured, is_promoted):
             hand[owner, cap_type] -= 1
 
 @njit
-def get_repetition_count(history, current_hash):
+def get_repetition_count(history_buffer, history_len, current_hash):
     """
-    履歴の中に current_hash が何回登場したか数える
+    履歴バッファ(有効長 history_len)の中に current_hash が何回登場したか数える
     """
     count = 0
-    for h in history:
-        if h == current_hash:
+    for i in range(history_len):
+        if history_buffer[i] == current_hash:
             count += 1
     return count
 
@@ -436,45 +428,14 @@ def eval_board_jit(board, hand, player):
     return my_points - op_points
 
 @njit
-def alpha_beta_jit(board, hand, depth, player, alpha, beta, current_hash, tt, history):
+def alpha_beta_jit(board, hand, depth, player, alpha, beta, current_hash, tt, history_buffer, history_len):
     """
-    αβ法による探索をする関数
-    negamaxだと思います。
-
-    Parameters
-    ----------
-    board : np.ndarray
-        盤面の配列
-    hand : np.ndarray
-        持ち駒の配列
-    depth : int
-        探索深さ
-    player : int
-        手番 (1 or 2)
-    alpha : int
-        α値
-    beta : int
-        β値
-    current_hash : int
-        現在のハッシュ値
-    tt : np.ndarray
-        トランスポジションテーブル
-
-    Returns
-    ----------
-    score : int
-        評価値
-    best_move_f : int
-        最善手のfrom
-    best_move_t : int
-        最善手のto
-    best_move_d : int
-        最善手のis_drop
+    修正版: history_buffer と history_len を受け取り、履歴を更新しながら探索する
     """
-
-    if get_repetition_count(history, current_hash) >= 2:
+    if get_repetition_count(history_buffer, history_len, current_hash) >= 1:
         return 0, -1, -1, 0
 
+    # 2. 置換表 (TT) の参照
     tt_index = current_hash & TT_MASK
     entry = tt[tt_index]
     
@@ -483,27 +444,23 @@ def alpha_beta_jit(board, hand, depth, player, alpha, beta, current_hash, tt, hi
             score = entry[1]
             flag = entry[6]
             
-            # カットされなかった場合
             if flag == FLAG_EXACT:
                 return score, entry[3], entry[4], entry[5]
-            
-            # βカットが発生した場合
             elif flag == FLAG_LOWER:
                 if score >= beta:
                     return score, entry[3], entry[4], entry[5]
                 if score > alpha:
                     alpha = score
-            
-            # 一番高いα
             elif flag == FLAG_UPPER:
                 if score <= alpha:
                     return score, entry[3], entry[4], entry[5]
                 if score < beta:
                     beta = score
 
-    # 決着判定
+    # 3. 決着判定
     wc = win_check_jit(board, hand, player)
     if wc != 0:
+        # 勝敗がついた場合もTTに保存
         tt[tt_index] = np.array([current_hash, wc, 99, 0, 0, 0, FLAG_EXACT], dtype=np.int64)
         return wc, -1, -1, 0
         
@@ -512,6 +469,7 @@ def alpha_beta_jit(board, hand, depth, player, alpha, beta, current_hash, tt, hi
         tt[tt_index] = np.array([current_hash, val, 0, 0, 0, 0, FLAG_EXACT], dtype=np.int64)
         return val, -1, -1, 0
 
+    # --- 探索準備 ---
     original_alpha = alpha
     best_score = -999999
     best_move_f, best_move_t, best_move_d = -1, -1, 0
@@ -520,14 +478,18 @@ def alpha_beta_jit(board, hand, depth, player, alpha, beta, current_hash, tt, hi
     
     if len(moves) == 0:
         return -WIN_SCORE, -1, -1, 0
-        
+
+    history_buffer[history_len] = current_hash
+    
     for i in range(len(moves)):
         move = moves[i]
         
         captured, is_promoted, next_hash = make_move_jit(board, hand, move, player, current_hash)
         
         next_player = 2 if player == 1 else 1
-        score, _, _, _ = alpha_beta_jit(board, hand, depth - 1, next_player, -beta, -alpha, next_hash, tt, history)
+        
+        # 再帰呼び出し: history_len を +1 して渡す
+        score, _, _, _ = alpha_beta_jit(board, hand, depth - 1, next_player, -beta, -alpha, next_hash, tt, history_buffer, history_len + 1)
         score = -score
         
         undo_make_move_jit(board, hand, move, player, captured, is_promoted)
@@ -541,6 +503,7 @@ def alpha_beta_jit(board, hand, depth, player, alpha, beta, current_hash, tt, hi
                 best_move_d = move[2]
                 
         if alpha >= beta:
+            # Betaカット
             tt[tt_index] = np.array([
                 current_hash, alpha, depth, move[0], move[1], move[2], FLAG_LOWER
             ], dtype=np.int64)
@@ -717,151 +680,3 @@ def board_print(board, hand):
             line += s
         print(line)
     print("-------------")
-
-def main():
-    tt_table = np.zeros((TT_SIZE, 7), dtype=np.int64)
-
-    hash_history = []
-
-    board_history = []
-
-    # ダミーを走らせてJITコンパイル
-    print("JIT Compiling...")
-    _b = np.zeros(12, dtype=np.int8)
-    _h = np.zeros((2, 6), dtype=np.int8)
-    _hash = compute_hash(_b, _h, 1)
-    _hist = np.array([], dtype=np.int64)
-    alpha_beta_jit(_b, _h, 1, 1, -10000, 10000, _hash, tt_table, _hist)
-    get_lion_capture_move(_b, _h, 1)
-    print("Done.")
-
-    # サーバー接続
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((serverName, serverPort))
-    except ConnectionRefusedError:
-        print("エラー: サーバーに接続できません。")
-        exit()
-
-    # メッセージ送受信関数
-    def sendMessage(cmd):
-        s.send(f"{cmd}\n".encode())
-        time.sleep(0.05)
-        msg = ""
-        while True:
-            chunk = s.recv(BUFSIZE).decode()
-            msg += chunk
-            if msg.endswith("\n"):
-                break
-        return msg.strip()
-    
-    # ここからゲームスタート
-    msg = s.recv(BUFSIZE).rstrip().decode()
-    print(f"Server: {msg}")
-    myTurn = 1 if "Player1" in msg else 2
-    print(f"あなたは Player{myTurn} です。")
-
-    board_old_json = sendMessage("initboardjson")
-    board_j_o = json.loads(board_old_json)
-
-    DEPTH = 10
-
-    while True:
-        current_turn_msg = sendMessage("turn")
-        current_turn = 0
-        if current_turn_msg == "Player1":
-            current_turn = 1
-        elif current_turn_msg == "Player2":
-            current_turn = 2
-        
-        if myTurn == current_turn:
-            print(f"\nPlayer{myTurn} のターンです。")
-            
-            boardjson_str = sendMessage("boardjson")
-            board_j = json.loads(boardjson_str)
-            board, hand = parse_board(board_j)
-
-            board_history.append((board.copy(), hand.copy()))
-
-            board_print(board, hand)
-            
-            current_hash = compute_hash(board, hand, myTurn)
-
-            hash_history.append(current_hash)
-
-            can_capture, f, t, d = get_lion_capture_move(board, hand, myTurn)
-            if can_capture:
-                print("相手のライオンをとれます。")
-                src, dest = unparse_move(f, t, d, board_j, myTurn)
-                print(f"最善手: {src} -> {dest}")
-                
-                resp = sendMessage(f"mv {src} {dest}")
-                print(f"サーバからの応答: {resp}")
-                
-                boardjson_str = sendMessage("boardjson")
-                board_j_o = json.loads(boardjson_str)
-                continue
-
-            if hash_history.count(current_hash) >= 3:
-                print("三回同一局面に到達しました。引き分けです。")
-            
-            print(f"思考中... (深さ: {DEPTH})")
-            start_time = time.time()
-
-            history_np = np.array(hash_history[:-1], dtype=np.int64)
-            
-            score, f, t, d = alpha_beta_jit(board, hand, DEPTH, myTurn, -999999, 999999, current_hash, tt_table, history_np)
-            
-            elapsed = time.time() - start_time
-            print(f"完了: {elapsed:.4f}秒, 評価値: {score}")
-
-            if f == -1:
-                moves = get_legal_moves_jit(board, hand, myTurn)
-                if len(moves) > 0:
-                    print("千日手っぽくなるので履歴を無視して探索します")
-                    dummy_hist = np.array([], dtype=np.int64)
-                    score, f, t, d = alpha_beta_jit(board, hand, DEPTH, myTurn, -999999, 999999, current_hash, tt_table, dummy_hist)
-
-            if f == -1:
-                print("指せる手がありません")
-                break
-            
-            src, dest = unparse_move(f, t, d, board_j, myTurn)
-            print(f"最善手: {src} -> {dest}")
-            
-            resp = sendMessage(f"mv {src} {dest}")
-            print(f"サーバからの応答: {resp}")
-
-            boardjson_str = sendMessage("boardjson")
-            board_j_o = json.loads(boardjson_str)
-        else:
-            # 相手番
-            time.sleep(0.5)
-            boardjson_str = sendMessage("boardjson")
-            board_j = json.loads(boardjson_str)
-
-            if len(board_history) > 0:
-                prev_b, prev_h = board_history[-1]
-
-                op_player = 2 if myTurn == 1 else 1
-
-                f, t, d = get_diff_board(prev_b, prev_h, *parse_board(board_j), op_player)
-
-                if f != -1:
-                    src, dest = unparse_move(f, t, d, board_j_o, op_player)
-                    print(f"\nPlayer{op_player} の手番です。")
-                    print(f"相手の指した手: {src} -> {dest}")
-
-            board, hand = parse_board(board_j)
-            wc = win_check_jit(board, hand, 2 if myTurn == 1 else 1)
-            if wc == WIN_SCORE:
-                print("\nあなたの負けです！")
-                break
-            elif wc == -WIN_SCORE:
-                print("\nあなたの勝ちです。")
-                break
-
-    s.close()
-
-if __name__ == "__main__":
-    main()
